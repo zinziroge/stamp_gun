@@ -21,14 +21,15 @@
 #define TRIGGER_SW_PIN      5   // pull up
 #define DET_ROULETTE_SW_1   18  // pull up
 #define DET_ROULETTE_SW_2   19  // pull up
-#define SERVO_ROULETTE_PIN  4   // 360 deg servo motor
-#define SERVO_PUSHER_PIN    15  // 0deg <= angle <= 180deg. 端っこ
+#define SERVO_ROULETTE_PIN  15  // 360 deg servo motor. 端っこ
+#define SERVO_PUSHER_PIN    4   // 0deg <= angle <= 180deg
 #define PWM_ROULETTE_CH     0
 #define PWM_PUSHER_CH       1
 
 // SG90, 50Hz, 0.5ms ~ 2.4ms
 #define SERVO_PUSHER_MIN    26  // (26/1024)*20ms = 0.5ms (-90deg)
 #define SERVO_PUSHER_MAX    123 // (123/1024)*20ms = 2.4ms (+90deg)
+#define SERVO_PUSHER_STOP   78  // 
 
 /*
  * FS90R
@@ -42,6 +43,7 @@
 #define SERVO_ROULETTE_MIN  36
 #define SERVO_ROULETTE_STOP  (77 + 2)
 #define SERVO_ROULETTE_MAX  118
+#define SERVO_ROULETTE_ROT  (SERVO_ROULETTE_STOP+5)
 
 int potVal;  // variable to read the value from the analog pin
 int angle;   // variable to hold the angle for the servo motor
@@ -58,6 +60,8 @@ void setup() {
   ledcAttachPin(SERVO_ROULETTE_PIN, PWM_ROULETTE_CH); // 15pin, 0ch
   ledcSetup(PWM_PUSHER_CH, 50, 10);  // 1ch 50 Hz 10bit resolution
   ledcAttachPin(SERVO_PUSHER_PIN, PWM_PUSHER_CH); // 15pin, 0ch
+  
+  ledcWrite(PWM_PUSHER_CH, SERVO_PUSHER_MIN); // ready
   
   Serial.begin(115200);
   Serial.println("start");
@@ -81,15 +85,26 @@ void init_roulette(void) {
 int n = SERVO_PUSHER_MIN;
 int m = 0;
 
-void loop(void) {
+void test_sw(void) {
+  Serial.print(digitalRead(DET_ROULETTE_SW_1));  
+  Serial.print(", ");
+  Serial.print(digitalRead(DET_ROULETTE_SW_2));
+  Serial.print(", ");  
+  Serial.print(digitalRead(TRIGGER_SW_PIN));
+  Serial.println();  
+}
+
+void test_servo_motor_2(void) {
   while(Serial.available() > 0) {
     int recv_byte = Serial.read();
-    Serial.println("recieved");
+    Serial.print("recieved, ");
     Serial.println(recv_byte, DEC);
-    Serial.println('j', DEC);
+  
     if(recv_byte == 'j') {
       ledcWrite(PWM_PUSHER_CH, SERVO_PUSHER_MIN);
     } else if(recv_byte == 'k') {
+      ledcWrite(PWM_PUSHER_CH, SERVO_PUSHER_STOP);
+    } else if(recv_byte == 'l') {
       ledcWrite(PWM_PUSHER_CH, SERVO_PUSHER_MAX);
     } else if(recv_byte == 'a') {
       ledcWrite(PWM_ROULETTE_CH, SERVO_ROULETTE_MIN);
@@ -97,14 +112,24 @@ void loop(void) {
       ledcWrite(PWM_ROULETTE_CH, SERVO_ROULETTE_STOP);
     } else if(recv_byte == 'd') {
       ledcWrite(PWM_ROULETTE_CH, SERVO_ROULETTE_MAX);
+    } else if(recv_byte == 'f') {
+      ledcWrite(PWM_ROULETTE_CH, SERVO_ROULETTE_ROT);
+    } else if(recv_byte == 'q') {
+      ledcWrite(PWM_PUSHER_CH, SERVO_PUSHER_STOP);
+      ledcWrite(PWM_ROULETTE_CH, SERVO_ROULETTE_STOP);
     }
   }
 
-  delay(500);
-  Serial.println(m);
+  Serial.print(digitalRead(DET_ROULETTE_SW_1));  
+  Serial.print(", ");
+  Serial.print(digitalRead(DET_ROULETTE_SW_2));
+  Serial.print(", ");  
+  Serial.println();
+  
+  delay(100);
 }
 
-void loop_3(void) {
+void test_servo_motor_1(void) {
     ledcWrite(PWM_PUSHER_CH, 0);
     delay(1000);
     ledcWrite(PWM_PUSHER_CH, 1023);
@@ -114,17 +139,74 @@ void loop_3(void) {
     delay(1000);
 }
 
-void loop_2(void) {
-  if(digitalRead(TRIGGER_SW_PIN) == 0) {
-    // pusher
-    ledcWrite(PWM_PUSHER_CH, 0);
-    ledcWrite(PWM_PUSHER_CH, 1023);
-    delay(2000);
-    ledcWrite(PWM_PUSHER_CH, 0);
+void test_trigger(void) {
+  static int pre_trigger_sw = 1;
+  
+  Serial.print(digitalRead(TRIGGER_SW_PIN));
+  Serial.println(); 
 
+  int cur_trigger_sw = digitalRead(TRIGGER_SW_PIN);
+  //if((pre_trigger_sw == 1) && (cur_trigger_sw == 0)) { // fall edge
+  if(cur_trigger_sw == 0) { // while pressing
+    Serial.println("Trigger pins was pressed.");
+    /*
+    // pusher
+    ledcWrite(PWM_PUSHER_CH, SERVO_PUSHER_MAX); // push
+    delay(2000);
+    ledcWrite(PWM_PUSHER_CH, SERVO_PUSHER_MIN); // ready
+    */
     // roulette
-    
+    ledcWrite(PWM_ROULETTE_CH, SERVO_ROULETTE_MAX);
+    delay(120);
+    ledcWrite(PWM_ROULETTE_CH, SERVO_ROULETTE_STOP);
   }
+
+  pre_trigger_sw = cur_trigger_sw;
+}
+
+void push_rot_only(void) {
+  static int pre_trigger_sw = 1;
+  int cur_trigger_sw = digitalRead(TRIGGER_SW_PIN);
+
+  Serial.print(digitalRead(TRIGGER_SW_PIN));
+  Serial.println();  
+    
+  if((pre_trigger_sw == 1) && (cur_trigger_sw == 0)) { // fall edge
+  //if(cur_trigger_sw == 0) { // while pressing
+    // pusher
+    ledcWrite(PWM_ROULETTE_CH, SERVO_ROULETTE_ROT);
+    ledcWrite(PWM_PUSHER_CH, SERVO_PUSHER_MAX); // push
+    delay(1000^- 0);
+
+    ledcWrite(PWM_ROULETTE_CH, SERVO_ROULETTE_STOP);
+    ledcWrite(PWM_PUSHER_CH, SERVO_PUSHER_MIN); // ready
+  }
+
+  pre_trigger_sw = cur_trigger_sw;
+  ledcWrite(PWM_PUSHER_CH, SERVO_PUSHER_MIN); 
+}
+
+void push_only(void) {
+  static int pre_trigger_sw = 1;
+  int cur_trigger_sw = digitalRead(TRIGGER_SW_PIN);
+  
+  if((pre_trigger_sw == 1) && (cur_trigger_sw == 0)) { // fall edge
+  //if(cur_trigger_sw == 0) { // while pressing
+    // pusher
+    ledcWrite(PWM_PUSHER_CH, SERVO_PUSHER_MAX); // push
+    delay(1000);
+    ledcWrite(PWM_PUSHER_CH, SERVO_PUSHER_MIN); // ready
+  }
+
+  pre_trigger_sw = cur_trigger_sw;
+}
+
+void loop(void) {
+  //push_rot_only();
+  push_only();
+  //test_sw();
+  //test_servo_motor_2();
+  //test_trigger();
 }
 
 #if 0
